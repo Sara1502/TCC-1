@@ -1,7 +1,7 @@
 import os
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 import tensorflow as tf
-import tensorflow_hub as hub
+#import tensorflow_hub as hub
 import numpy as np
 import cv2
 from matplotlib import pyplot as plt

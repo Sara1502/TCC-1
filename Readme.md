@@ -1,0 +1,1 @@
+Onde faço o meu TCC na universidade de joinville UNIVILLE sobre IA com reconhecimento de imagem.
