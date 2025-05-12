@@ -1,10 +1,11 @@
 import os
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 import tensorflow as tf
-#import tensorflow_hub as hub
+import time
 import numpy as np
 import cv2
 from matplotlib import pyplot as plt
+
 
 
 
@@ -107,15 +108,6 @@ def calcular_angulo_3pontos(a, b, c):
     return np.degrees(np.arccos(np.clip(cosine_angle, -1.0, 1.0)))
 
 
-def calcular_coeficiente_angular(p1, p2):
-    """Calcula o coeficiente angular entre dois keypoints"""
-    if p1[2] < 0.3 or p2[2] < 0.3:  # Confiança mínima
-        return None
-    delta_y = p2[0] - p1[0]
-    delta_x = p2[1] - p1[1]
-    if delta_x == 0:
-        return float('inf')
-    return delta_y / delta_x
 
 def avaliar_sincronia_grupo(keypoints_with_score):
     """Avalia sincronia considerando todas as articulações principais"""
@@ -169,33 +161,8 @@ def calcular_coeficiente_angular(p1, p2):
     delta_y = p2[0] - p1[0]
     delta_x = p2[1] - p1[1]
     if delta_x == 0:
-        return float('inf')
+        return 1e6 if delta_y > 0 else -1e6 
     return delta_y / delta_x
-
-def avaliar_sincronia_grupo(keypoints_with_score):
-    pares_juntas = [
-        (5, 7), (6, 8),    # Braços
-        (11, 13), (12, 14)  # Pernas
-    ]
-    
-    penalidade_total = 0
-    num_comparacoes = 0
-    
-    for (junta_a, junta_b) in pares_juntas:
-        coeficientes = []
-        for pessoa in keypoints_with_score:
-            coef = calcular_coeficiente_angular(pessoa[junta_a], pessoa[junta_b])
-            if coef is not None:
-                coeficientes.append(coef)
-        
-        for i in range(len(coeficientes)):
-            for j in range(i+1, len(coeficientes)):
-                diff_percent = abs(coeficientes[i] - coeficientes[j]) / ((abs(coeficientes[i]) + abs(coeficientes[j]))/2) * 100
-                if diff_percent > 5:
-                    penalidade_total += min(10, diff_percent - 5)
-                num_comparacoes += 1
-    
-    return max(0, 100 - (penalidade_total / num_comparacoes)) if num_comparacoes > 0 else 100
 
 
 
@@ -233,10 +200,38 @@ def verificar_erros_graves(keypoints_with_score):
                 
     return False
 
-frames_com_erro = 0
+
+def detectar_acrobacia(keypoints_with_score, frame_shape):
+    """Identifica acrobacias baseadas na posição dos pés/mãos em relação ao chão"""
+    y_floor = frame_shape[0] - 50  # 10px da base do frame como chão
+    
+    for pessoa in keypoints_with_score:
+        # Extrai coordenadas Y e confiança dos keypoints
+        tornozelo_esq_y, tornozelo_esq_conf = pessoa[15][0], pessoa[15][2]
+        tornozelo_dir_y, tornozelo_dir_conf = pessoa[16][0], pessoa[16][2]
+        mao_esq_y, mao_esq_conf = pessoa[9][0], pessoa[9][2]
+        mao_dir_y, mao_dir_conf = pessoa[10][0], pessoa[10][2]
+        
+        # Verifica se os pés estão acima do chão (saltos)
+        pes_no_ar = (tornozelo_esq_conf > 0.3 and tornozelo_esq_y < y_floor - 20) and \
+                    (tornozelo_dir_conf > 0.3 and tornozelo_dir_y < y_floor - 20)
+
+        # Verifica se as mãos estão próximas do chão
+        maos_proximas_chao = (mao_esq_conf > 0.3 and mao_esq_y >= y_floor - 30) or \
+                             (mao_dir_conf > 0.3 and mao_dir_y >= y_floor - 30)
+        
+
+        if pes_no_ar or maos_proximas_chao:
+            return True
+    
+    return False
+
+
+
+frames_com_erro = [] 
 total_frames = 0
 angulos_por_frame = []  # Agora armazenará as notas de 0-100%
-
+frames_acrobacias = 0
 
 
 #LOOP PRICIPAL
@@ -246,82 +241,59 @@ while cap.isOpened():
     if not ret:
         break
 
-
-    kernel = np.ones((3, 3), dtype=np.uint8)
-    frame = cv2.dilate(frame, kernel, iterations=1)  # Melhora contornos
-
-
-    img = frame.copy()
-    input_height, input_width = 192, 192  # Ajuste de acordo com a resolução esperada
-    img_resized = cv2.resize(img, (input_width, input_height))
-    img_input = tf.expand_dims(img_resized, axis=0)  # Adiciona a dimensão do batch (1, height, width, 3)
+    # Processamento do frame (detecção com MoveNet)
+    img = cv2.resize(frame, (192, 192))
+    img_input = tf.expand_dims(img, axis=0)
     img_input = tf.cast(img_input, dtype=tf.int32)
-
-
-    # Detection
+    
+    # Detecção de poses
     result = movenet(img_input)
-    keypoints_with_score = result['output_0'].numpy()[:, :, :51].reshape((6, 17, 3))[:4]  
+    keypoints = result['output_0'].numpy()[:, :, :51].reshape((6, 17, 3))
 
+    # Avaliação de sincronia
+    nota_sincronia = avaliar_sincronia_grupo(keypoints)
+    angulos_por_frame.append(nota_sincronia)
+
+    # Detecção de acrobacias (e salva frames se necessário)
+    is_acrobacia = detectar_acrobacia(keypoints, frame.shape)
+    frame_acrobacia = frame.copy() if is_acrobacia else None
     
-    nota_sincronia = avaliar_sincronia_grupo(keypoints_with_score)
-    angulos_por_frame.append(nota_sincronia)  # Armazena a nota do frame atual
-
-
-    if nota_sincronia < 70:
-        frames_com_erro += 1
-    cv2.putText(frame, "ERRO", (50, 150), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,0,255), 2)
-
-
-    if len(keypoints_with_score) == 4:
-        dancer_positions = ['left', 'center_left', 'center_right', 'right']
-        torso_centers = [np.mean([pose[5][1], pose[6][1]]) for pose in keypoints_with_score]
-        keypoints_with_score = [keypoints_with_score[i] for i in np.argsort(torso_centers)]
-
-    # Renderiza keypoints
-    loop_through_people(frame, keypoints_with_score, EDGES, 0.3)
-
-    
-    status = "PERFEITA" if nota_sincronia >= 90 else "BOA" if nota_sincronia >= 70 else "FRACA"
-    cv2.putText(frame, status, (20, 100), cv2.FONT_HERSHEY_SIMPLEX, 1, 
-           (0, 0, 255) if status == "FRACA" else (0, 255, 0), 2)
-
-    
-    if nota_sincronia < 70: 
-        frames_com_erro += 1
-    total_frames += 1 
-    
-    
-    # Dentro do loop, após a detecção:
-    conf_deteccao = calcular_confiabilidade_deteccao(keypoints_with_score)
-    erro_grave = verificar_erros_graves(keypoints_with_score)
-
-    # Atualize a exibição
-    cv2.putText(frame, f"Conf. Detecção: {conf_deteccao:.1f}%", (20, 150), 
-            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
-    if erro_grave:
-        cv2.putText(frame, "ERRO GRAVE", (20, 180), 
-                cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+    if is_acrobacia:
+        fileName = f"frames/frames-acrobacia/acrobacia_{total_frames:04d}.jpg"
+        cv2.imwrite(fileName, frame_acrobacia)
         
+        frames_acrobacias += 1
+
+    # Feedback no terminal (opcional)
+    if total_frames % 10 == 0:  # Print a cada 10 frames
+        print(f"Frame {total_frames}: Sincronia = {nota_sincronia:.1f}% | Acrobacias = {frames_acrobacias}")
     
-    cv2.imshow("Movenet Multipose", frame)
-    if cv2.waitKey(10) & 0xFF == ord('q'):
+    total_frames += 1
+
+    print(f"Processado: {total_frames}/{int(cap.get(cv2.CAP_PROP_FRAME_COUNT))} frames")
+    
+    # Parar depois de 10 frames com acrobacia (DEBUG)
+    if frames_acrobacias >= 10:
+        print("10 acrobacias detectadas. Encerrando...")
         break
 
 
 # Substitua o cálculo de confiabilidade por:
 # Substitua o cálculo final por:
-confiabilidade_modelo = np.mean([calcular_confiabilidade_deteccao(result['output_0'].numpy()[:,:,:51].reshape((6,17,3))[:4]) 
+confiabilidade_modelo = np.mean([calcular_confiabilidade_deteccao(result['output_0'].numpy()[:,:,:51].reshape((6,17,3))) 
                                for _ in range(10)])  # Teste com 10 amostras
 
 
 nota_final = np.mean(angulos_por_frame) if angulos_por_frame else 0
 
 
-print("\n=== RELATÓRIO DE CONFIABILIDADE ===")
-print("\nRELATÓRIO FINAL:")
+print("\n=== RELATÓRIO DE FINAL ===")
 print(f"Nota média de sincronia: {nota_final:.2f}%")
-print(f"Frames analisados: {len(angulos_por_frame)}")
 print(f"Precisão de Detecção: {confiabilidade_modelo:.2f}%")
+print(f"Frames com acrobacias: {frames_acrobacias} ({frames_acrobacias/total_frames*100:.1f}%)")
+
 
 cap.release()
 cv2.destroyAllWindows()
+for i in range(5):  # Garante que todas as janelas são fechadas
+    cv2.waitKey(1)
