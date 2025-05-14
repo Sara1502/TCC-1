@@ -201,30 +201,68 @@ def verificar_erros_graves(keypoints_with_score):
     return False
 
 
-def detectar_acrobacia(keypoints_with_score, frame_shape):
-    """Identifica acrobacias baseadas na posição dos pés/mãos em relação ao chão"""
-    y_floor = frame_shape[0] - 50  # 10px da base do frame como chão
-    
+def detectar_acrobacia(keypoints_with_score, frame_shape, frame=None, debug=False):
+    altura_frame = frame_shape[0]
+    largura_frame = frame_shape[1]
+    caixa_altura = int(altura_frame * 0.20)
+    topo_caixa = altura_frame - caixa_altura
+    margem_lateral = int(largura_frame * 0.15)
+
+    debug_frame = frame.copy() if (debug and frame is not None) else None
+    if debug_frame is not None:
+        cv2.rectangle(debug_frame, 
+                     (margem_lateral, topo_caixa),
+                     (largura_frame - margem_lateral, altura_frame),
+                     (0, 255, 255), 2)
+
     for pessoa in keypoints_with_score:
-        # Extrai coordenadas Y e confiança dos keypoints
-        tornozelo_esq_y, tornozelo_esq_conf = pessoa[15][0], pessoa[15][2]
-        tornozelo_dir_y, tornozelo_dir_conf = pessoa[16][0], pessoa[16][2]
-        mao_esq_y, mao_esq_conf = pessoa[9][0], pessoa[9][2]
-        mao_dir_y, mao_dir_conf = pessoa[10][0], pessoa[10][2]
-        
-        # Verifica se os pés estão acima do chão (saltos)
-        pes_no_ar = (tornozelo_esq_conf > 0.3 and tornozelo_esq_y < y_floor - 20) and \
-                    (tornozelo_dir_conf > 0.3 and tornozelo_dir_y < y_floor - 20)
+        pe_esq = pessoa[15] if pessoa[15][2] > 0.6 else None
+        pe_dir = pessoa[16] if pessoa[16][2] > 0.6 else None
+        mao_esq = pessoa[9] if pessoa[9][2] > 0.5 else None
+        mao_dir = pessoa[10] if pessoa[10][2] > 0.5 else None
+        quadril_esq = pessoa[11] if pessoa[11][2] > 0.5 else None
+        quadril_dir = pessoa[12] if pessoa[12][2] > 0.5 else None
 
-        # Verifica se as mãos estão próximas do chão
-        maos_proximas_chao = (mao_esq_conf > 0.3 and mao_esq_y >= y_floor - 30) or \
-                             (mao_dir_conf > 0.3 and mao_dir_y >= y_floor - 30)
-        
+        # Verifica PULO
+        if pe_esq is not None and pe_dir is not None:
+            pe_esq_no_ar = pe_esq[0] < topo_caixa
+            pe_dir_no_ar = pe_dir[0] < topo_caixa
+            altura_media_pes = (topo_caixa - pe_esq[0] + topo_caixa - pe_dir[0]) / 2
+            quadril = quadril_esq if quadril_esq is not None else quadril_dir
+            if pe_esq_no_ar and pe_dir_no_ar and altura_media_pes > 20 and quadril is not None and quadril[0] < topo_caixa:
+                if debug_frame is not None:
+                    cv2.putText(debug_frame, "PULO DETECTADO", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+                    cv2.imwrite("debug_pulo.jpg", debug_frame)
+                return True
 
-        if pes_no_ar or maos_proximas_chao:
+        # Verifica NO CHÃO
+        mao_esq_na_caixa = (
+            mao_esq is not None and 
+            mao_esq[0] >= topo_caixa and 
+            margem_lateral <= mao_esq[1] <= (largura_frame - margem_lateral)
+        )
+        mao_dir_na_caixa = (
+            mao_dir is not None and 
+            mao_dir[0] >= topo_caixa and 
+            margem_lateral <= mao_dir[1] <= (largura_frame - margem_lateral)
+        )
+
+        quadril_baixo = False
+        if quadril_esq is not None and quadril_esq[0] >= topo_caixa:
+            quadril_baixo = True
+        elif quadril_dir is not None and quadril_dir[0] >= topo_caixa:
+            quadril_baixo = True
+
+        if (mao_esq_na_caixa or mao_dir_na_caixa) and quadril_baixo:
+            if debug_frame is not None:
+                cv2.putText(debug_frame, "NO CHAO", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+                cv2.imwrite("debug_chao.jpg", debug_frame)
             return True
-    
+
     return False
+
+
+
 
 
 
@@ -270,12 +308,13 @@ while cap.isOpened():
     
     total_frames += 1
 
+
     print(f"Processado: {total_frames}/{int(cap.get(cv2.CAP_PROP_FRAME_COUNT))} frames")
     
     # Parar depois de 10 frames com acrobacia (DEBUG)
-    if frames_acrobacias >= 10:
+    """if frames_acrobacias >= 10:
         print("10 acrobacias detectadas. Encerrando...")
-        break
+        break"""
 
 
 # Substitua o cálculo de confiabilidade por:
