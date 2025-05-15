@@ -5,7 +5,8 @@ import time
 import numpy as np
 import cv2
 from matplotlib import pyplot as plt
-
+import os
+from datetime import datetime
 
 
 
@@ -201,19 +202,32 @@ def verificar_erros_graves(keypoints_with_score):
     return False
 
 
-def detectar_acrobacia(keypoints_with_score, frame_shape, frame=None, debug=False):
+
+
+
+
+def detectar_acrobacia(keypoints_with_score, frame_shape, frame=None, debug=False, output_dir="debug_frames", frame_id=None): 
     altura_frame = frame_shape[0]
     largura_frame = frame_shape[1]
-    caixa_altura = int(altura_frame * 0.20)
+    caixa_altura = int(altura_frame * 0.30)
     topo_caixa = altura_frame - caixa_altura
     margem_lateral = int(largura_frame * 0.15)
 
+    if debug and not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+
     debug_frame = frame.copy() if (debug and frame is not None) else None
     if debug_frame is not None:
+        # desenha a caixa
         cv2.rectangle(debug_frame, 
                      (margem_lateral, topo_caixa),
                      (largura_frame - margem_lateral, altura_frame),
                      (0, 255, 255), 2)
+
+        # salva a imagem com a caixa desenhada
+        nome_caixa = f"{output_dir}/caixa_{frame_id or datetime.now().strftime('%H%M%S%f')}.jpg"
+        sucesso = cv2.imwrite(nome_caixa, debug_frame)
+        print(f"[DEBUG] Tentativa de salvar imagem da caixa: {nome_caixa} — {'OK' if sucesso else 'FALHOU'}")
 
     for pessoa in keypoints_with_score:
         pe_esq = pessoa[15] if pessoa[15][2] > 0.6 else None
@@ -232,7 +246,8 @@ def detectar_acrobacia(keypoints_with_score, frame_shape, frame=None, debug=Fals
             if pe_esq_no_ar and pe_dir_no_ar and altura_media_pes > 20 and quadril is not None and quadril[0] < topo_caixa:
                 if debug_frame is not None:
                     cv2.putText(debug_frame, "PULO DETECTADO", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-                    cv2.imwrite("debug_pulo.jpg", debug_frame)
+                    nome = f"{output_dir}/pulo_{frame_id or datetime.now().strftime('%H%M%S%f')}.jpg"
+                    cv2.imwrite(nome, debug_frame)
                 return True
 
         # Verifica NO CHÃO
@@ -241,25 +256,37 @@ def detectar_acrobacia(keypoints_with_score, frame_shape, frame=None, debug=Fals
             mao_esq[0] >= topo_caixa and 
             margem_lateral <= mao_esq[1] <= (largura_frame - margem_lateral)
         )
+
         mao_dir_na_caixa = (
             mao_dir is not None and 
             mao_dir[0] >= topo_caixa and 
             margem_lateral <= mao_dir[1] <= (largura_frame - margem_lateral)
         )
 
-        quadril_baixo = False
-        if quadril_esq is not None and quadril_esq[0] >= topo_caixa:
-            quadril_baixo = True
-        elif quadril_dir is not None and quadril_dir[0] >= topo_caixa:
-            quadril_baixo = True
+        joelho_esq = pessoa[13] if pessoa[13][2] > 0.5 else None
+        joelho_dir = pessoa[14] if pessoa[14][2] > 0.5 else None
 
-        if (mao_esq_na_caixa or mao_dir_na_caixa) and quadril_baixo:
+        joelho_baixo = (
+            (joelho_esq is not None and joelho_esq[0] >= topo_caixa) or
+            (joelho_dir is not None and joelho_dir[0] >= topo_caixa)
+        )
+
+        if (mao_esq_na_caixa or mao_dir_na_caixa) and joelho_baixo:
+
             if debug_frame is not None:
                 cv2.putText(debug_frame, "NO CHAO", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
-                cv2.imwrite("debug_chao.jpg", debug_frame)
+                nome = f"{output_dir}/chao_{frame_id or datetime.now().strftime('%H%M%S%f')}.jpg"
+                cv2.imwrite(nome, debug_frame)
             return True
 
+    if debug_frame is not None:
+        cv2.putText(debug_frame, "SEM DETECCAO", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (128, 128, 128), 2)
+        nome = f"{output_dir}/sem_deteccao_{frame_id or datetime.now().strftime('%H%M%S%f')}.jpg"
+        cv2.imwrite(nome, debug_frame)
+
     return False
+
+
 
 
 
@@ -273,7 +300,7 @@ frames_acrobacias = 0
 
 
 #LOOP PRICIPAL
-cap = cv2.VideoCapture('Kpop-Dance-Practice\\7-pessoas\\O.O\\O.O.mp4')
+cap = cv2.VideoCapture('Kpop-Dance-Practice\\4-pessoas\\Hip\\Hip.mp4')
 while cap.isOpened():
     ret, frame = cap.read()
     if not ret:
