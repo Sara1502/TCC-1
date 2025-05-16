@@ -110,60 +110,47 @@ def calcular_angulo_3pontos(a, b, c):
 
 
 
-def avaliar_sincronia_grupo(keypoints_with_score):
-    """Avalia sincronia considerando todas as articulações principais"""
-    pares_juntas = [
-        # Braços
-        (5, 7),   # Ombro esquerdo -> Cotovelo esquerdo
-        (7, 9),   # Cotovelo esquerdo -> Punho esquerdo
-        (6, 8),   # Ombro direito -> Cotovelo direito
-        (8, 10),  # Cotovelo direito -> Punho direito
-        
-        # Pernas
-        (11, 13), # Quadril esquerdo -> Joelho esquerdo
-        (13, 15), # Joelho esquerdo -> Tornozelo esquerdo
-        (12, 14), # Quadril direito -> Joelho direito
-        (14, 16)  # Joelho direito -> Tornozelo direito
+def avaliar_sincronia_grupo(keypoints, limiar_percent=5):
+    if keypoints is None or keypoints.shape[0] < 2:
+        return False  # Não há pessoas suficientes para avaliar sincronia
+
+    membros_para_analise = [
+        (10, 8),  # pé direito até joelho direito
+        (9, 7),   # pé esquerdo até joelho esquerdo
+        (8, 6),   # joelho direito até quadril direito
+        (7, 5),   # joelho esquerdo até quadril esquerdo
+        (6, 12),  # quadril direito até ombro direito
+        (5, 11),  # quadril esquerdo até ombro esquerdo
+        (12, 14), # ombro direito até cotovelo direito
+        (11, 13), # ombro esquerdo até cotovelo esquerdo
+        (14, 16), # cotovelo direito até punho direito
+        (13, 15), # cotovelo esquerdo até punho esquerdo
     ]
-    
-    penalidade_total = 0
-    num_comparacoes = 0
-    
-    for (junta_a, junta_b) in pares_juntas:
+
+    for junta_a, junta_b in membros_para_analise:
         coeficientes = []
-        for pessoa in keypoints_with_score:
-            # Verifica confiança dos keypoints
-            if pessoa[junta_a][2] > 0.3 and pessoa[junta_b][2] > 0.3:
-                coef = calcular_coeficiente_angular(pessoa[junta_a], pessoa[junta_b])
-                if coef is not None:
-                    coeficientes.append(coef)
-        
-        # Compara todos os pares de dançarinos
+        for pessoa in keypoints:
+            if (
+                pessoa[junta_a][2] > 0.3 and
+                pessoa[junta_b][2] > 0.3 and
+                pessoa[junta_a][0] != pessoa[junta_b][0]
+            ):
+                dy = pessoa[junta_a][1] - pessoa[junta_b][1]
+                dx = pessoa[junta_a][0] - pessoa[junta_b][0]
+                coeficiente = dy / (dx + 1e-6)
+                coeficientes.append(coeficiente)
+
+        # Comparar todos os pares de coeficientes
         for i in range(len(coeficientes)):
-            for j in range(i+1, len(coeficientes)):
-                # Diferença percentual normalizada
+            for j in range(i + 1, len(coeficientes)):
                 avg = (abs(coeficientes[i]) + abs(coeficientes[j])) / 2
-                diff_percent = abs(coeficientes[i] - coeficientes[j]) / (avg + 1e-6) * 100  # +1e-6 evita divisão por zero
-                
-                # Penalidade progressiva
-                if diff_percent > 5:
-                    penalidade = min(diff_percent - 5, 15)  # Limita penalidade máxima a 15% por comparação
-                    penalidade_total += penalidade
-                num_comparacoes += 1
-    
-    # Calcula nota final (0-100%)
-    return max(0, 100 - (penalidade_total / num_comparacoes)) if num_comparacoes > 0 else 100
+                diff_percent = abs(coeficientes[i] - coeficientes[j]) / (avg + 1e-6) * 100
+                if diff_percent > limiar_percent:
+                    return True  # Falta de sincronia detectada
+
+    return False  # Sincronia dentro do aceitável
 
 
-def calcular_coeficiente_angular(p1, p2):
-    """Calcula o coeficiente angular entre dois keypoints"""
-    if p1[2] < 0.3 or p2[2] < 0.3:  # Confiança mínima
-        return None
-    delta_y = p2[0] - p1[0]
-    delta_x = p2[1] - p1[1]
-    if delta_x == 0:
-        return 1e6 if delta_y > 0 else -1e6 
-    return delta_y / delta_x
 
 
 
@@ -289,21 +276,21 @@ def detectar_acrobacia(keypoints_with_score, frame_shape, frame=None, debug=Fals
 
 
 
-frames_com_erro = [] 
+frames_com_erro = []
 total_frames = 0
-angulos_por_frame = []  # Agora armazenará as notas de 0-100%
+angulos_por_frame = []  
 frames_acrobacias = 0
-
+frames_assincronia = 0
 
 #LOOP PRICIPAL
-cap = cv2.VideoCapture('Kpop-Dance-Practice\\4-pessoas\\Hip\\Hip.mp4')
+cap = cv2.VideoCapture('Kpop-Dance-Practice\\7-pessoas\\O.O\\O.O.mp4')
 while cap.isOpened():
     ret, frame = cap.read()
     if not ret:
         break
 
     # Processamento do frame (detecção com MoveNet)
-    img = cv2.resize(frame, (192, 192))
+    img = cv2.resize(frame, (384, 384))
     img_input = tf.expand_dims(img, axis=0)
     img_input = tf.cast(img_input, dtype=tf.int32)
     
@@ -320,10 +307,15 @@ while cap.isOpened():
     frame_acrobacia = frame.copy() if is_acrobacia else None
     
     if is_acrobacia:
-        fileName = f"frames/frames-acrobacia/acrobacia_{total_frames:04d}.jpg"
-        cv2.imwrite(fileName, frame_acrobacia)
-        
         frames_acrobacias += 1
+
+    
+    if avaliar_sincronia_grupo(keypoints):
+        fileName = f"frames/frames-assincronia/assincronia_{total_frames:04d}.jpg"
+        cv2.imwrite(fileName, frame.copy())
+        frames_com_erro.append(total_frames)  # salva índice do frame
+        frames_assincronia += 1
+
 
     total_frames += 1
 
@@ -337,13 +329,18 @@ confiabilidade_modelo = np.mean([calcular_confiabilidade_deteccao(result['output
                                for _ in range(10)])  # Teste com 10 amostras
 
 
-nota_final = np.mean(angulos_por_frame) if angulos_por_frame else 0
+
+frames_validos_para_sincronia = total_frames - frames_acrobacias
+
+frameSincronia = total_frames - frames_assincronia
+
+nota_final = (frameSincronia / frames_validos_para_sincronia) * 100 if frames_validos_para_sincronia > 0 else 0
 
 
 print("\n=== RELATÓRIO DE FINAL ===")
-print(f"Nota média de sincronia: {nota_final:.2f}%")
-print(f"Precisão de Detecção: {confiabilidade_modelo:.2f}%")
-print(f"Frames com acrobacias: {frames_acrobacias} ({frames_acrobacias/total_frames*100:.1f}%)")
+print(f"Nota média de sincronia: {nota_final:.2f}%  Frames assincronia: {frames_assincronia}")
+print(f"Precisão de Detecção: {confiabilidade_modelo:.2f}% Frames total: {total_frames}")
+print(f"Frames com acrobacias: ({(frames_acrobacias/total_frames)*100:.1f}%) Frames acrobacia: {frames_acrobacias}")
 
 
 cap.release()
