@@ -209,8 +209,8 @@ def verificar_erros_graves(keypoints_with_score):
 def detectar_acrobacia(keypoints_with_score, frame_shape, frame=None, debug=False, output_dir="debug_frames", frame_id=None): 
     altura_frame = frame_shape[0]
     largura_frame = frame_shape[1]
-    caixa_altura = int(altura_frame * 0.50)
-    topo_caixa = altura_frame - caixa_altura
+    caixa_altura = int(altura_frame * 0.20)
+    topo_caixa = altura_frame - int(altura_frame * 0.20)
     margem_lateral = int(largura_frame * 0.15)
 
     if debug and not os.path.exists(output_dir):
@@ -244,6 +244,10 @@ def detectar_acrobacia(keypoints_with_score, frame_shape, frame=None, debug=Fals
             altura_media_pes = (topo_caixa - pe_esq[0] + topo_caixa - pe_dir[0]) / 2
             quadril = quadril_esq if quadril_esq is not None else quadril_dir
             if pe_esq_no_ar and pe_dir_no_ar and altura_media_pes > 20 and quadril is not None and quadril[0] < topo_caixa:
+                if debug_frame is not None:
+                    cv2.putText(debug_frame, "PULO DETECTADO", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+                    nome = f"{output_dir}/pulo_{frame_id or datetime.now().strftime('%H%M%S%f')}.jpg"
+                    cv2.imwrite(nome, debug_frame)
                 return True
 
         # Verifica NO CHÃO
@@ -296,7 +300,7 @@ frames_acrobacias = 0
 
 
 #LOOP PRICIPAL
-cap = cv2.VideoCapture('Kpop-Dance-Practice\\4-pessoas\\Hip\\Hip.mp4')
+cap = cv2.VideoCapture('Kpop-Dance-Practice\\4-pessoas\\Dingga\\Dingga.mp4')
 while cap.isOpened():
     ret, frame = cap.read()
     if not ret:
@@ -325,13 +329,22 @@ while cap.isOpened():
         
         frames_acrobacias += 1
 
+    # Feedback no terminal (opcional)
+    if total_frames % 10 == 0:  # Print a cada 10 frames
+        print(f"Frame {total_frames}: Sincronia = {nota_sincronia:.1f}% | Acrobacias = {frames_acrobacias}")
+    
     total_frames += 1
+
 
     print(f"Processado: {total_frames}/{int(cap.get(cv2.CAP_PROP_FRAME_COUNT))} frames")
     
+    # Parar depois de 10 frames com acrobacia (DEBUG)
+    """if frames_acrobacias >= 10:
+        print("10 acrobacias detectadas. Encerrando...")
+        break"""
 
 
-
+# Substitua o cálculo de confiabilidade por:
 # Substitua o cálculo final por:
 confiabilidade_modelo = np.mean([calcular_confiabilidade_deteccao(result['output_0'].numpy()[:,:,:51].reshape((6,17,3))) 
                                for _ in range(10)])  # Teste com 10 amostras
