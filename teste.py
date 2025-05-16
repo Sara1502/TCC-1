@@ -209,8 +209,8 @@ def verificar_erros_graves(keypoints_with_score):
 def detectar_acrobacia(keypoints_with_score, frame_shape, frame=None, debug=False, output_dir="debug_frames", frame_id=None): 
     altura_frame = frame_shape[0]
     largura_frame = frame_shape[1]
-    caixa_altura = int(altura_frame * 0.30)
-    topo_caixa = altura_frame - caixa_altura
+    caixa_altura = int(altura_frame * 0.20)
+    topo_caixa = altura_frame - int(altura_frame * 0.20)
     margem_lateral = int(largura_frame * 0.15)
 
     if debug and not os.path.exists(output_dir):
@@ -300,7 +300,7 @@ frames_acrobacias = 0
 
 
 #LOOP PRICIPAL
-cap = cv2.VideoCapture('Kpop-Dance-Practice\\4-pessoas\\Hip\\Hip.mp4')
+cap = cv2.VideoCapture('Kpop-Dance-Practice\\4-pessoas\\Dingga\\Dingga.mp4')
 while cap.isOpened():
     ret, frame = cap.read()
     if not ret:
