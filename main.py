@@ -64,7 +64,7 @@ def draw_keypoints(frame, keypoints, confidence_threshold):
 
 def draw_connections(frame, keypoints, edges, confidence_threshold):
     y, x, c = frame.shape
-    input_height, input_width = 192, 192  # Ajuste para o tamanho da entrada do modelo
+    input_height, input_width =  192, 192 # Ajuste para o tamanho da entrada do modelo
     shaped = np.squeeze(np.multiply(keypoints, [input_height, input_width, 1]))
 
     # Ajuste os keypoints para o tamanho real do frame
@@ -111,48 +111,39 @@ def calcular_angulo_3pontos(a, b, c):
 
 
 def avaliar_sincronia_grupo(keypoints_with_score):
-    """Avalia sincronia considerando todas as articulações principais"""
+    """Avalia sincronia e retorna (nota, sincronia_perfeita)"""
     pares_juntas = [
-        # Braços
-        (5, 7),   # Ombro esquerdo -> Cotovelo esquerdo
-        (7, 9),   # Cotovelo esquerdo -> Punho esquerdo
-        (6, 8),   # Ombro direito -> Cotovelo direito
-        (8, 10),  # Cotovelo direito -> Punho direito
-        
-        # Pernas
-        (11, 13), # Quadril esquerdo -> Joelho esquerdo
-        (13, 15), # Joelho esquerdo -> Tornozelo esquerdo
-        (12, 14), # Quadril direito -> Joelho direito
-        (14, 16)  # Joelho direito -> Tornozelo direito
+        (5, 7), (7, 9),   # Braço esquerdo
+        (6, 8), (8, 10),  # Braço direito
+        (11, 13), (13, 15), # Perna esquerda
+        (12, 14), (14, 16)  # Perna direita
     ]
     
     penalidade_total = 0
     num_comparacoes = 0
+    sincronia_perfeita = True  # Assume perfeição até provar o contrário
     
     for (junta_a, junta_b) in pares_juntas:
         coeficientes = []
         for pessoa in keypoints_with_score:
-            # Verifica confiança dos keypoints
             if pessoa[junta_a][2] > 0.3 and pessoa[junta_b][2] > 0.3:
                 coef = calcular_coeficiente_angular(pessoa[junta_a], pessoa[junta_b])
                 if coef is not None:
                     coeficientes.append(coef)
         
-        # Compara todos os pares de dançarinos
         for i in range(len(coeficientes)):
             for j in range(i+1, len(coeficientes)):
-                # Diferença percentual normalizada
                 avg = (abs(coeficientes[i]) + abs(coeficientes[j])) / 2
-                diff_percent = abs(coeficientes[i] - coeficientes[j]) / (avg + 1e-6) * 100  # +1e-6 evita divisão por zero
+                diff_percent = abs(coeficientes[i] - coeficientes[j]) / (avg + 1e-6) * 100
                 
-                # Penalidade progressiva
                 if diff_percent > 5:
-                    penalidade = min(diff_percent - 5, 15)  # Limita penalidade máxima a 15% por comparação
+                    penalidade = min(diff_percent - 5, 15)
                     penalidade_total += penalidade
+                    sincronia_perfeita = False  # Marca como não perfeita
                 num_comparacoes += 1
     
-    # Calcula nota final (0-100%)
-    return max(0, 100 - (penalidade_total / num_comparacoes)) if num_comparacoes > 0 else 100
+    nota = max(0, 100 - (penalidade_total / num_comparacoes)) if num_comparacoes > 0 else 100
+    return nota, sincronia_perfeita
 
 
 def calcular_coeficiente_angular(p1, p2):
@@ -297,10 +288,11 @@ frames_com_erro = []
 total_frames = 0
 angulos_por_frame = []  # Agora armazenará as notas de 0-100%
 frames_acrobacias = 0
+framesAssincronia = 0
 
 
 #LOOP PRICIPAL
-cap = cv2.VideoCapture('Kpop-Dance-Practice\\4-pessoas\\Dingga\\Dingga.mp4')
+cap = cv2.VideoCapture('Kpop-Dance-Practice\\4-pessoas\\UNTOUCHABLE\\UNTOUCHABLE.mp4')
 while cap.isOpened():
     ret, frame = cap.read()
     if not ret:
@@ -316,23 +308,27 @@ while cap.isOpened():
     keypoints = result['output_0'].numpy()[:, :, :51].reshape((6, 17, 3))
 
     # Avaliação de sincronia
-    nota_sincronia = avaliar_sincronia_grupo(keypoints)
+    nota_sincronia, sincronia_perfeita = avaliar_sincronia_grupo(keypoints)
     angulos_por_frame.append(nota_sincronia)
+
 
     # Detecção de acrobacias (e salva frames se necessário)
     is_acrobacia = detectar_acrobacia(keypoints, frame.shape)
     frame_acrobacia = frame.copy() if is_acrobacia else None
     
+
+    if (not sincronia_perfeita and nota_sincronia < 87):
+        fileName = f"frames/framesAssincronia/dessincronia_{total_frames:04d}.jpg"
+        cv2.imwrite(fileName, frame)
+        framesAssincronia += 1  # Adicione esta variável no início do código
+            
     if is_acrobacia:
         fileName = f"frames/frames-acrobacia/acrobacia_{total_frames:04d}.jpg"
-        cv2.imwrite(fileName, frame_acrobacia)
-        
+        cv2.imwrite(fileName, frame)
         frames_acrobacias += 1
 
-    # Feedback no terminal (opcional)
-    if total_frames % 10 == 0:  # Print a cada 10 frames
-        print(f"Frame {total_frames}: Sincronia = {nota_sincronia:.1f}% | Acrobacias = {frames_acrobacias}")
-    
+
+
     total_frames += 1
 
 
@@ -359,7 +355,3 @@ print(f"Precisão de Detecção: {confiabilidade_modelo:.2f}%")
 print(f"Frames com acrobacias: {frames_acrobacias} ({frames_acrobacias/total_frames*100:.1f}%)")
 
 
-cap.release()
-cv2.destroyAllWindows()
-for i in range(5):  # Garante que todas as janelas são fechadas
-    cv2.waitKey(1)
