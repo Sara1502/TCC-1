@@ -333,32 +333,11 @@ while cap.isOpened():
 
 
 
-# Substitua o cálculo final por:
 confiabilidadeModelo = np.mean([calcular_confiabilidade_deteccao(result['output_0'].numpy()[:,:,:51].reshape((6,17,3))) 
                                for _ in range(10)])  # Teste com 10 amostras
 
 
-"""frameSincronia = totalFrames - framesAssincronia
-framesValidosSincronia = totalFrames - framesAcrobacias
-
-if framesValidosSincronia > 0:
-    notaSincronia = (frameSincronia / framesValidosSincronia) * 100
-else:
-    notaSincronia = 0
-
-nota_acrobacia = (1 - (framesAcrobacias / totalFrames)) * 100
-
-
-nota_final = (frameSincronia / framesValidosSincronia) * 100 if framesValidosSincronia > 0 else 0
-
-
-print("\n=== RELATÓRIO DE FINAL ===")
-print(f"Nota média de sincronia: {nota_final:.2f}%  Frames assincronia: {framesAssincronia}")
-print(f"Precisão de Detecção: {confiabilidadeModelo:.2f}% Frames total: {totalFrames}")
-print(f"Frames com acrobacias: ({(framesAcrobacias/totalFrames)*100:.1f}%) Frames acrobacia: {framesAcrobacias}")
-"""
-
-# Cálculo da nota final (agora ignorando frames de acrobacia):
+# Cálculo da nota final (ignorando frames de acrobacia):
 frames_validos = totalFrames - framesAcrobacias
 if frames_validos > 0:
     nota_final = np.mean(angulosPorFrame)  # Já contém apenas frames não-acrobáticos
