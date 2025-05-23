@@ -109,7 +109,7 @@ def calcular_angulo_3pontos(a, b, c):
     return np.degrees(np.arccos(np.clip(cosine_angle, -1.0, 1.0)))
 
 
-def avaliar_sincronia_grupo(keypoints, limiar_percent=10):
+def avaliar_sincronia_grupo(keypoints, limiar_percent=5):
     if keypoints is None or keypoints.shape[0] < 2:
         return 100  # Retorna 100% se não há pessoas suficientes para comparar
 
@@ -144,7 +144,7 @@ def avaliar_sincronia_grupo(keypoints, limiar_percent=10):
                 diff_percent = abs(coeficientes[i] - coeficientes[j]) / (avg + 1e-6) * 100
                 
                 if diff_percent > limiar_percent:
-                    penalidade = min(diff_percent - limiar_percent, 20)  # Penalidade máxima de 20% por comparação
+                    penalidade = min(diff_percent - limiar_percent, 15)  # Penalidade máxima de 20% por comparação
                     penalidade_total += penalidade
                 num_comparacoes += 1
     
@@ -288,7 +288,7 @@ framesAcrobacias = 0
 framesAssincronia = 0
 
 #LOOP PRICIPAL
-cap = cv2.VideoCapture('Kpop-Dance-Practice\\7-pessoas\\O.O\\O.O.mp4')
+cap = cv2.VideoCapture('Kpop-Dance-Practice\\4-pessoas\\UNTOUCHABLE\\UNTOUCHABLE.mp4')
 while cap.isOpened():
     ret, frame = cap.read()
     if not ret:
@@ -311,14 +311,14 @@ while cap.isOpened():
     isAcrobacia = detectar_acrobacia(keypoints, frame.shape)
     frame_acrobacia = frame.copy() if isAcrobacia else None
     
-    # Dentro do loop principal:
+
     isAcrobacia = detectar_acrobacia(keypoints, frame.shape)
 
     if not isAcrobacia:  # Só avalia sincronia se NÃO for acrobacia
         notaSincronia = avaliar_sincronia_grupo(keypoints)
         angulosPorFrame.append(notaSincronia)
         
-        if notaSincronia < 80:  # Salva frames com baixa sincronia
+        if notaSincronia < 90:  # Salva frames com baixa sincronia
             fileName = f"frames/framesAssincronia/assincronia_{totalFrames:04d}.jpg"
             cv2.imwrite(fileName, frame.copy())
             framesAssincronia += 1
@@ -337,7 +337,11 @@ confiabilidadeModelo = np.mean([calcular_confiabilidade_deteccao(result['output_
                                for _ in range(10)])  # Teste com 10 amostras
 
 
+<<<<<<< HEAD
 # Cálculo da nota final (ignorando frames de acrobacia):
+=======
+# Cálculo da nota final (agora ignorando frames de acrobacia):
+>>>>>>> 4fcab47730e36f053e910fe7c6fb2933928dcaf3
 frames_validos = totalFrames - framesAcrobacias
 if frames_validos > 0:
     nota_final = np.mean(angulosPorFrame)  # Já contém apenas frames não-acrobáticos
@@ -347,5 +351,5 @@ else:
 print("\n=== RELATÓRIO FINAL ===")
 print(f"Nota de sincronia (excluindo acrobacias): {nota_final:.2f}%")
 print(f"Frames analisados: {frames_validos}/{totalFrames} ({(frames_validos/totalFrames)*100:.1f}% válidos)")
-print(f"Frames com baixa sincronia (<80%): {framesAssincronia} ({(framesAssincronia/frames_validos)*100:.1f}% dos válidos)")
+print(f"Frames com baixa sincronia (<90%): {framesAssincronia} ({(framesAssincronia/frames_validos)*100:.1f}% dos válidos)")
 print(f"Frames de acrobacia: {framesAcrobacias} ({(framesAcrobacias/totalFrames)*100:.1f}%)")
